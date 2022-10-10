@@ -14,9 +14,9 @@ import os
 import numpy as np
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--dset_id', required=True, type=int)
+parser.add_argument('--dset_id', default=150, type=int)
 parser.add_argument('--vision_dset', action = 'store_true')
-parser.add_argument('--task', required=True, type=str,choices = ['binary','multiclass','regression'])
+parser.add_argument('--task',default='binary', type=str,choices = ['binary','multiclass','regression'])
 parser.add_argument('--cont_embeddings', default='MLP', type=str,choices = ['MLP','Noemb','pos_singleMLP'])
 parser.add_argument('--embedding_size', default=32, type=int)
 parser.add_argument('--transformer_depth', default=6, type=int)
@@ -56,7 +56,7 @@ parser.add_argument('--lam1', default=10, type=float)
 parser.add_argument('--lam2', default=1, type=float)
 parser.add_argument('--lam3', default=10, type=float)
 parser.add_argument('--final_mlp_style', default='sep', type=str,choices = ['common','sep'])
-
+parser.parse_args()
 
 opt = parser.parse_args()
 modelsave_path = os.path.join(os.getcwd(),opt.savemodelroot,opt.task,str(opt.dset_id),opt.run_name)
