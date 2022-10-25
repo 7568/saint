@@ -11,8 +11,24 @@ from augmentations import embed_data_mask
 from augmentations import add_noise
 from tqdm import tqdm
 import os
+import sys
 import numpy as np
+import logging
 
+
+def init_log():
+    logger = logging.getLogger()
+    logger.setLevel(level=logging.DEBUG)
+    sys.stderr = open(f'log/train_v2_std_err.log', 'a')
+    sys.stdout = open(f'log/train_v2_std_out.log', 'a')
+    handler = logging.FileHandler(f'log/train_v2_debug_info.log')
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+
+init_log()
+print('start!')
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--gpu_index', default=3, type=int)
@@ -97,7 +113,7 @@ print(opt)
 
 print(f'cpu_count() : {cpu_count()}')
 train_ds = DataSetCatCon(X_train, y_train, cat_idxs, con_idxs, opt.dtask, continuous_mean_std, trading_date_idxs)
-trainloader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=int(cpu_count()*0.7))
+trainloader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=int(cpu_count() * 0.7))
 
 valid_ds = DataSetCatCon(X_valid, y_valid, cat_idxs, con_idxs, opt.dtask, continuous_mean_std, trading_date_idxs)
 validloader = DataLoader(valid_ds, batch_size=1, shuffle=False, num_workers=4)

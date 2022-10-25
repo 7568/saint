@@ -117,6 +117,7 @@ def mean_sq_error(model, dloader, device, vision_dset):
             y_test = torch.cat([y_test,y_gts.squeeze().float()],dim=0)
             y_pred = torch.cat([y_pred,y_outs],dim=0)
         # import ipdb; ipdb.set_trace() 
-        rmse = mean_squared_error(y_test.cpu(), y_pred.cpu(), squared=False)
+        # rmse = mean_squared_error(y_test.cpu(), y_pred.cpu(), squared=False)
+        rmse = mean_squared_error(y_test.cpu(), y_pred.cpu())
         return rmse
 
