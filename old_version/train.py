@@ -15,7 +15,7 @@ import os
 import numpy as np
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--dataset', default='forest', type=str, choices=['1995_income','bank_marketing','qsar_bio','online_shoppers','blastchar','htru2','shrutime','spambase','philippine','mnist','loan_data','arcene','volkert','creditcard','arrhythmia','forest','kdd99'])
+parser.add_argument('--dataset', default='kdd99', type=str, choices=['1995_income','bank_marketing','qsar_bio','online_shoppers','blastchar','htru2','shrutime','spambase','philippine','mnist','loan_data','arcene','volkert','creditcard','arrhythmia','forest','kdd99'])
 parser.add_argument('--cont_embeddings', default='MLP', type=str,choices = ['MLP','Noemb','pos_singleMLP'])
 parser.add_argument('--embedding_size', default=32, type=int)
 parser.add_argument('--transformer_depth', default=6, type=int)
