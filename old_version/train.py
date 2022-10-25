@@ -15,7 +15,7 @@ import os
 import numpy as np
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--dataset', default='kdd99', type=str, choices=['1995_income','bank_marketing','qsar_bio','online_shoppers','blastchar','htru2','shrutime','spambase','philippine','mnist','loan_data','arcene','volkert','creditcard','arrhythmia','forest','kdd99'])
+parser.add_argument('--dataset', default='forest', type=str, choices=['1995_income','bank_marketing','qsar_bio','online_shoppers','blastchar','htru2','shrutime','spambase','philippine','mnist','loan_data','arcene','volkert','creditcard','arrhythmia','forest','kdd99'])
 parser.add_argument('--cont_embeddings', default='MLP', type=str,choices = ['MLP','Noemb','pos_singleMLP'])
 parser.add_argument('--embedding_size', default=32, type=int)
 parser.add_argument('--transformer_depth', default=6, type=int)
@@ -143,13 +143,13 @@ if opt.ssl_avail_y>0:
     train_bsize = min(opt.ssl_avail_y//4,opt.batchsize)
     
 train_ds = DataSetCatCon(X_train, y_train, cat_idxs,continuous_mean_std, is_pretraining=True)
-trainloader = DataLoader(train_ds, batch_size=train_bsize, shuffle=True,num_workers=4)
+trainloader = DataLoader(train_ds, batch_size=train_bsize, shuffle=True,num_workers=4,pin_memory=True)
 
 valid_ds = DataSetCatCon(X_valid, y_valid, cat_idxs,continuous_mean_std, is_pretraining=True)
-validloader = DataLoader(valid_ds, batch_size=opt.batchsize, shuffle=False,num_workers=4)
+validloader = DataLoader(valid_ds, batch_size=opt.batchsize, shuffle=False,num_workers=4,pin_memory=True)
 
 test_ds = DataSetCatCon(X_test, y_test, cat_idxs,continuous_mean_std, is_pretraining=True)
-testloader = DataLoader(test_ds, batch_size=opt.batchsize, shuffle=False,num_workers=4)
+testloader = DataLoader(test_ds, batch_size=opt.batchsize, shuffle=False,num_workers=4,pin_memory=True)
 
 # Creating a different dataloader for the pretraining.
 if opt.pretrain:
@@ -318,6 +318,7 @@ for epoch in range(opt.epochs):
         optimizer.zero_grad()
         # x_categ is the the categorical data, with y appended as last feature. x_cont has continuous data. cat_mask is an array of ones same shape as x_categ except for last column(corresponding to y's) set to 0s. con_mask is an array of ones same shape as x_cont. 
         x_categ, x_cont, cat_mask, con_mask = data[0].to(device), data[1].to(device),data[2].to(device),data[3].to(device)
+
         # We are converting the data to embeddings in the next step
         _ , x_categ_enc, x_cont_enc = embed_data_mask(x_categ, x_cont, cat_mask, con_mask,model,vision_dset)           
         reps = model.transformer(x_categ_enc, x_cont_enc)

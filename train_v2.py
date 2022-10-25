@@ -15,7 +15,7 @@ import numpy as np
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--gpu_index', default=0, type=int)
+parser.add_argument('--gpu_index', default=3, type=int)
 parser.add_argument('--vision_dset', action='store_true')
 parser.add_argument('--task', default='regression', type=str, choices=['binary', 'multiclass', 'regression'])
 parser.add_argument('--cont_embeddings', default='MLP', type=str, choices=['MLP', 'Noemb', 'pos_singleMLP'])
@@ -75,10 +75,9 @@ print(f"Device is {device}.")
 torch.manual_seed(opt.set_seed)
 os.makedirs(modelsave_path, exist_ok=True)
 
-
-cat_dims, cat_idxs, con_idxs, X_train, y_train, X_valid, y_valid, X_test, y_test, train_mean, train_std = data_prep_china_options(
-    opt.dset_seed)
-continuous_mean_std = np.array([train_mean, train_std]).astype(np.float32)
+cat_dims, cat_idxs, con_idxs, X_train, y_train, X_valid, y_valid, X_test, y_test, train_mean, train_std, \
+trading_date_idxs = data_prep_china_options(opt.dset_seed)
+# continuous_mean_std = np.array([train_mean, train_std]).astype(np.float32)
 continuous_mean_std = None
 
 ##### Setting some hyperparams based on inputs and dataset
@@ -97,14 +96,14 @@ print(nfeat, opt.batchsize)
 print(opt)
 
 print(f'cpu_count() : {cpu_count()}')
-train_ds = DataSetCatCon(X_train, y_train, cat_idxs, opt.dtask, continuous_mean_std)
-trainloader = DataLoader(train_ds, batch_size=opt.batchsize, shuffle=True, num_workers=7)
+train_ds = DataSetCatCon(X_train, y_train, cat_idxs, con_idxs, opt.dtask, continuous_mean_std, trading_date_idxs)
+trainloader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=int(cpu_count()*0.7))
 
-valid_ds = DataSetCatCon(X_valid, y_valid, cat_idxs, opt.dtask, continuous_mean_std)
-validloader = DataLoader(valid_ds, batch_size=opt.batchsize, shuffle=False, num_workers=4)
+valid_ds = DataSetCatCon(X_valid, y_valid, cat_idxs, con_idxs, opt.dtask, continuous_mean_std, trading_date_idxs)
+validloader = DataLoader(valid_ds, batch_size=1, shuffle=False, num_workers=4)
 
-test_ds = DataSetCatCon(X_test, y_test, cat_idxs, opt.dtask, continuous_mean_std)
-testloader = DataLoader(test_ds, batch_size=opt.batchsize, shuffle=False, num_workers=4)
+test_ds = DataSetCatCon(X_test, y_test, cat_idxs, con_idxs, opt.dtask, continuous_mean_std, trading_date_idxs)
+testloader = DataLoader(test_ds, batch_size=1, shuffle=False, num_workers=4)
 if opt.task == 'regression':
     y_dim = 1
 else:
@@ -169,11 +168,16 @@ print('Training begins now.')
 for epoch in range(opt.epochs):
     model.train()
     running_loss = 0.0
-    for i, data in tqdm(enumerate(trainloader, 0),total=len(trainloader)):
+    for i, data in tqdm(enumerate(trainloader, 0), total=len(trainloader)):
         optimizer.zero_grad()
-        # x_categ is the the categorical data, x_cont has continuous data, y_gts has ground truth ys. cat_mask is an array of ones same shape as x_categ and an additional column(corresponding to CLS token) set to 0s. con_mask is an array of ones same shape as x_cont. 
-        x_categ, x_cont, y_gts, cat_mask, con_mask = data[0].to(device), data[1].to(device), data[2].to(device), data[
-            3].to(device), data[4].to(device)
+
+        # x_categ is the the categorical data, x_cont has continuous data, y_gts has ground truth ys. cat_mask is an array of ones same shape as x_categ and an additional column(corresponding to CLS token) set to 0s. con_mask is an array of ones same shape as x_cont.
+        x_categ, x_cont, y_gts, cat_mask, con_mask = data[0], data[1], data[2], data[3], data[4]
+        x_categ, x_cont, y_gts, cat_mask, con_mask = torch.squeeze(x_categ, 0).to(device), \
+                                                     torch.squeeze(x_cont, 0).to(device), \
+                                                     torch.squeeze(y_gts, 0).to(device), \
+                                                     torch.squeeze(cat_mask, 0).to(device), \
+                                                     torch.squeeze(con_mask, 0).to(device)
 
         # We are converting the data to embeddings in the next step
         _, x_categ_enc, x_cont_enc = embed_data_mask(x_categ, x_cont, cat_mask, con_mask, model, vision_dset)

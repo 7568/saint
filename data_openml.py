@@ -108,27 +108,27 @@ def data_prep_china_options(seed):
     np.random.seed(seed)
     PREPARE_HOME_PATH = '/home/liyu/data/hedging-option/china-market/h_sh_300/'
     NORMAL_TYPE = 'mean_norm'
-    training_df = pd.read_csv(f'{PREPARE_HOME_PATH}/{NORMAL_TYPE}/training.csv')
-    validation_df = pd.read_csv(f'{PREPARE_HOME_PATH}/{NORMAL_TYPE}/validation.csv')
-    testing_df = pd.read_csv(f'{PREPARE_HOME_PATH}/{NORMAL_TYPE}/testing.csv')
+    training_df = pd.read_csv(f'{PREPARE_HOME_PATH}/{NORMAL_TYPE}/training.csv',parse_dates=['TradingDate'])
+    validation_df = pd.read_csv(f'{PREPARE_HOME_PATH}/{NORMAL_TYPE}/validation.csv',parse_dates=['TradingDate'])
+    testing_df = pd.read_csv(f'{PREPARE_HOME_PATH}/{NORMAL_TYPE}/testing.csv',parse_dates=['TradingDate'])
 
     cat_features = ['CallOrPut', 'MainSign']
     cat_dims = [training_df[i].unique().size for i in cat_features]
     cat_idxs = [training_df.columns.get_loc(i) for i in cat_features]
-    con_idxs = np.delete(np.arange(training_df.columns.size - 1), np.concatenate((cat_idxs,[-1])))
+    trading_date_idxs = training_df.columns.get_loc('TradingDate')
+    con_idxs = np.delete(np.arange(training_df.columns.size - 1), np.concatenate((cat_idxs, [trading_date_idxs,-1,-2,-3])))
     X_train, y_train, X_valid, y_valid, X_test, y_test = {}, {}, {}, {}, {}, {}
     # X_train['data'] = training_df.iloc[:500, :-1].to_numpy()
 
-    X_train['data'] = training_df.iloc[:, :-2].to_numpy()
+    X_train['data'] = training_df.iloc[:, :-3].to_numpy()
     X_train['mask'] = np.ones(X_train['data'].shape)
-    y_train['data'] = np.array(training_df['target']).reshape(-1, 1)
-    X_valid['data'] = validation_df.iloc[:, :-2].to_numpy()
+    y_train['data'] = np.array(training_df['C_1']).reshape(-1, 1)
+    X_valid['data'] = validation_df.iloc[:, :-3].to_numpy()
     X_valid['mask'] = np.ones(X_valid['data'].shape)
-    y_valid['data'] = np.array(validation_df['target']).reshape(-1, 1)
-    X_test['data'] = testing_df.iloc[:, :-2].to_numpy()
+    y_valid['data'] = np.array(validation_df['C_1']).reshape(-1, 1)
+    X_test['data'] = testing_df.iloc[:, :-3].to_numpy()
     X_test['mask'] = np.ones(X_test['data'].shape)
-    y_test['data'] = np.array(testing_df['target']).reshape(-1, 1)
-
+    y_test['data'] = np.array(testing_df['C_1']).reshape(-1, 1)
 
     # X_train['data'] = training_df.iloc[:500, :-2].to_numpy()
     # X_train['mask'] = np.ones(X_train['data'].shape)
@@ -140,21 +140,24 @@ def data_prep_china_options(seed):
     # X_test['mask'] = np.ones(X_test['data'].shape)
     # y_test['data'] = np.array(testing_df['target']).reshape(-1, 1)[:500, :]
 
-
-    train_mean, train_std = np.array(X_train['data'][:, con_idxs], dtype=np.float32).mean(0), np.array(
-        X_train['data'][:, con_idxs], dtype=np.float32).std(0)
-    train_std = np.where(train_std < 1e-6, 1e-6, train_std)
+    # train_mean, train_std = np.array(X_train['data'][:, con_idxs], dtype=np.float32).mean(0), np.array(
+    #     X_train['data'][:, con_idxs], dtype=np.float32).std(0)
+    # train_std = np.where(train_std < 1e-6, 1e-6, train_std)
+    train_mean, train_std=0,0
     # import ipdb; ipdb.set_trace()
-    return cat_dims, cat_idxs, con_idxs, X_train, y_train, X_valid, y_valid, X_test, y_test, train_mean, train_std
+    return cat_dims, cat_idxs, con_idxs, X_train, y_train, X_valid, y_valid, X_test, y_test, train_mean, train_std, trading_date_idxs
 
 
 class DataSetCatCon(Dataset):
-    def __init__(self, X, Y, cat_cols, task='clf', continuous_mean_std=None):
-
+    def __init__(self, X, Y, cat_cols,con_cols, task='clf', continuous_mean_std=None,trading_date_idxs=0):
         cat_cols = list(cat_cols)
         X_mask = X['mask'].copy()
         X = X['data'].copy()
-        con_cols = list(set(np.arange(X.shape[1])) - set(cat_cols))
+        self.trading_dates = X[:,trading_date_idxs]
+        self.unique_trading_dates = np.unique(self.trading_dates)
+        # 删除时间那一列，因为时间不参数训练
+        # X = np.delete(X,trading_date_idxs,1)
+
         self.X1 = X[:, cat_cols].copy().astype(np.int64)  # categorical columns
         self.X2 = X[:, con_cols].copy().astype(np.float32)  # numerical columns
         self.X1_mask = X_mask[:, cat_cols].copy().astype(np.int64)  # categorical columns
@@ -169,10 +172,14 @@ class DataSetCatCon(Dataset):
             mean, std = continuous_mean_std
             self.X2 = (self.X2 - mean) / std
 
+
     def __len__(self):
-        return len(self.y)
+        return len(self.unique_trading_dates)
 
     def __getitem__(self, idx):
+        trading_date = self.unique_trading_dates[idx]
+        _idx = np.where(self.trading_dates == trading_date)
+
         # X1 has categorical data, X2 has continuous
-        return np.concatenate((self.cls[idx], self.X1[idx])), self.X2[idx], self.y[idx], np.concatenate(
-            (self.cls_mask[idx], self.X1_mask[idx])), self.X2_mask[idx]
+        return np.concatenate((self.cls[_idx], self.X1[_idx]),axis=1), self.X2[_idx], self.y[_idx], np.concatenate(
+            (self.cls_mask[_idx], self.X1_mask[_idx]),axis=1), self.X2_mask[_idx]

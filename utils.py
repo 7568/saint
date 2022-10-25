@@ -103,7 +103,13 @@ def mean_sq_error(model, dloader, device, vision_dset):
     y_pred = torch.empty(0).to(device)
     with torch.no_grad():
         for i, data in enumerate(dloader, 0):
-            x_categ, x_cont, y_gts, cat_mask, con_mask = data[0].to(device), data[1].to(device),data[2].to(device),data[3].to(device),data[4].to(device)
+            x_categ, x_cont, y_gts, cat_mask, con_mask = data[0], data[1], data[2], data[3], data[4]
+            x_categ, x_cont, y_gts, cat_mask, con_mask = torch.squeeze(x_categ, 0).to(device), \
+                                                         torch.squeeze(x_cont, 0).to(device), \
+                                                         torch.squeeze(y_gts, 0).to(device), \
+                                                         torch.squeeze(cat_mask, 0).to(device), \
+                                                         torch.squeeze(con_mask, 0).to(device)
+            # x_categ, x_cont, y_gts, cat_mask, con_mask = data[0].to(device), data[1].to(device),data[2].to(device),data[3].to(device),data[4].to(device)
             _ , x_categ_enc, x_cont_enc = embed_data_mask(x_categ, x_cont, cat_mask, con_mask,model,vision_dset)           
             reps = model.transformer(x_categ_enc, x_cont_enc)
             y_reps = reps[:,0,:]
