@@ -1,33 +1,21 @@
-import torch
-from torch import nn
-from models import SAINT
-from multiprocessing import Pool, cpu_count
-from data_openml import data_prep_china_options, DataSetCatCon
 import argparse
-from torch.utils.data import DataLoader
-import torch.optim as optim
-from utils import count_parameters, mean_sq_error
-from augmentations import embed_data_mask
-from augmentations import add_noise
-from tqdm import tqdm
 import os
-import sys
+from multiprocessing import cpu_count
+
 import numpy as np
-import logging
+import torch
+import torch.optim as optim
+from torch import nn
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
+from augmentations import embed_data_mask
+from data_openml import data_prep_china_options, DataSetCatCon
+from models import SAINT
+from utils import count_parameters, mean_sq_error
+import logger_conf
 
-def init_log():
-    logger = logging.getLogger()
-    logger.setLevel(level=logging.DEBUG)
-    sys.stderr = open(f'log/train_v2_std_err.log', 'a')
-    sys.stdout = open(f'log/train_v2_std_out.log', 'a')
-    handler = logging.FileHandler(f'log/train_v2_debug_info.log')
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
-
-init_log()
+logger_conf.init_log()
 print('start!')
 parser = argparse.ArgumentParser()
 
