@@ -36,7 +36,7 @@ parser.add_argument('--scheduler', default='cosine', type=str, choices=['cosine'
 
 parser.add_argument('--lr', default=0.0001, type=float)
 parser.add_argument('--epochs', default=100, type=int)
-parser.add_argument('--batchsize', default=256, type=int)
+parser.add_argument('--batchsize', default=1, type=int)
 parser.add_argument('--savemodelroot', default='./bestmodels', type=str)
 parser.add_argument('--run_name', default='testrun', type=str)
 parser.add_argument('--set_seed', default=1, type=int)
