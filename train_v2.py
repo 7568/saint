@@ -15,8 +15,6 @@ from models import SAINT
 from utils import count_parameters, mean_sq_error
 import logger_conf
 
-logger_conf.init_log()
-print('start!')
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--gpu_index', default=3, type=int)
@@ -43,6 +41,8 @@ parser.add_argument('--set_seed', default=1, type=int)
 parser.add_argument('--dset_seed', default=5, type=int)
 parser.add_argument('--active_log', action='store_true')
 
+parser.add_argument('--log_to_file', action='store_true')
+
 parser.add_argument('--pretrain', action='store_true')
 parser.add_argument('--pretrain_epochs', default=50, type=int)
 parser.add_argument('--pt_tasks', default=['contrastive', 'denoising'], type=str, nargs='*',
@@ -63,9 +63,11 @@ parser.add_argument('--lam1', default=10, type=float)
 parser.add_argument('--lam2', default=1, type=float)
 parser.add_argument('--lam3', default=10, type=float)
 parser.add_argument('--final_mlp_style', default='sep', type=str, choices=['common', 'sep'])
-parser.parse_args()
 
 opt = parser.parse_args()
+if opt.log_to_file:
+    logger_conf.init_log('train_robust_v2')
+
 modelsave_path = os.path.join(os.getcwd(), opt.savemodelroot, opt.task, opt.run_name)
 if opt.task == 'regression':
     opt.dtask = 'reg'

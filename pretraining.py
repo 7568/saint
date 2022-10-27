@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from tqdm import tqdm
 
 from data_openml import data_prep_openml,task_dset_ids,DataSetCatCon
 from torch.utils.data import DataLoader
@@ -10,8 +11,8 @@ from augmentations import add_noise
 import os
 import numpy as np
 
-def SAINT_pretrain(model,cat_idxs,X_train,y_train,continuous_mean_std,opt,device):
-    train_ds = DataSetCatCon(X_train, y_train, cat_idxs,opt.dtask, continuous_mean_std)
+def SAINT_pretrain(model,cat_idxs,con_idxs,X_train,y_train,continuous_mean_std,opt,device,trading_date_idxs):
+    train_ds = DataSetCatCon(X_train, y_train, cat_idxs,con_idxs,opt.dtask, continuous_mean_std,trading_date_idxs)
     trainloader = DataLoader(train_ds, batch_size=opt.batchsize, shuffle=True,num_workers=4)
     vision_dset = opt.vision_dset
     optimizer = optim.AdamW(model.parameters(),lr=0.0001)
@@ -25,10 +26,15 @@ def SAINT_pretrain(model,cat_idxs,X_train,y_train,continuous_mean_std,opt,device
     for epoch in range(opt.pretrain_epochs):
         model.train()
         running_loss = 0.0
-        for i, data in enumerate(trainloader, 0):
+        for i, data in tqdm(enumerate(trainloader, 0), total=len(trainloader)):
             optimizer.zero_grad()
-            x_categ, x_cont, _ ,cat_mask, con_mask = data[0].to(device), data[1].to(device),data[2].to(device),data[3].to(device),data[4].to(device)
-            
+
+            x_categ, x_cont, y_gts, cat_mask, con_mask = data[0], data[1], data[2], data[3], data[4]
+            x_categ, x_cont, y_gts, cat_mask, con_mask = torch.squeeze(x_categ, 0).to(device), \
+                                                         torch.squeeze(x_cont, 0).to(device), \
+                                                         torch.squeeze(y_gts, 0).to(device), \
+                                                         torch.squeeze(cat_mask, 0).to(device), \
+                                                         torch.squeeze(con_mask, 0).to(device)
             # embed_data_mask function is used to embed both categorical and continuous data.
             if 'cutmix' in opt.pt_aug:
                 from augmentations import add_noise

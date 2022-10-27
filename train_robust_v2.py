@@ -1,23 +1,30 @@
+import argparse
+import os
+from multiprocessing import cpu_count
+
+import numpy as np
 import torch
 from torch import nn
 from models import SAINT, SAINT_vision
 
-from data_openml import data_prep_openml, task_dset_ids, DataSetCatCon
+from data_openml import data_prep_china_options, DataSetCatCon
 import argparse
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 import torch.optim as optim
-from utils import count_parameters, classification_scores, mean_sq_error
+from utils import count_parameters, mean_sq_error
 from augmentations import embed_data_mask
 from augmentations import add_noise
 
 import os
 import numpy as np
+import logger_conf
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--dset_id', required=True, type=int)
+parser.add_argument('--gpu_index', default=6, type=int)
 parser.add_argument('--vision_dset', action='store_true')
-parser.add_argument('--task', required=True, type=str, choices=['binary', 'multiclass', 'regression'])
+parser.add_argument('--task', default='regression', type=str, choices=['binary', 'multiclass', 'regression'])
 parser.add_argument('--cont_embeddings', default='MLP', type=str, choices=['MLP', 'Noemb', 'pos_singleMLP'])
 parser.add_argument('--embedding_size', default=32, type=int)
 parser.add_argument('--transformer_depth', default=6, type=int)
@@ -32,12 +39,14 @@ parser.add_argument('--scheduler', default='cosine', type=str, choices=['cosine'
 
 parser.add_argument('--lr', default=0.0001, type=float)
 parser.add_argument('--epochs', default=100, type=int)
-parser.add_argument('--batchsize', default=256, type=int)
+parser.add_argument('--batchsize', default=1, type=int)
 parser.add_argument('--savemodelroot', default='./bestmodels', type=str)
 parser.add_argument('--run_name', default='testrun', type=str)
 parser.add_argument('--set_seed', default=1, type=int)
 parser.add_argument('--dset_seed', default=1, type=int)
 parser.add_argument('--active_log', action='store_true')
+
+parser.add_argument('--log_to_file', action='store_true')
 
 parser.add_argument('--pretrain', action='store_true')
 parser.add_argument('--pretrain_epochs', default=50, type=int)
@@ -61,41 +70,43 @@ parser.add_argument('--lam3', default=10, type=float)
 parser.add_argument('--final_mlp_style', default='sep', type=str, choices=['common', 'sep'])
 
 opt = parser.parse_args()
-modelsave_path = os.path.join(os.getcwd(), opt.savemodelroot, opt.task, str(opt.dset_id), opt.run_name)
+if opt.log_to_file:
+    logger_conf.init_log('train_robust_v2')
+opt.pretrain=True
+modelsave_path = os.path.join(os.getcwd(), opt.savemodelroot, opt.task, opt.run_name)
 if opt.task == 'regression':
     opt.dtask = 'reg'
 else:
     opt.dtask = 'clf'
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device(f"cuda:{opt.gpu_index}" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu")
 print(f"Device is {device}.")
 
 torch.manual_seed(opt.set_seed)
 os.makedirs(modelsave_path, exist_ok=True)
 
 if opt.active_log:
-    import wandb
 
     if opt.train_noise_type is not None and opt.train_noise_level > 0:
-        wandb.init(project="saint_v2_robustness", group=f'{opt.run_name}_{opt.task}',
-                   name=f'{opt.task}_{opt.train_noise_type}_{str(opt.train_noise_level)}_{str(opt.attentiontype)}_{str(opt.dset_id)}')
+        logger_conf.logger.info("saint_v2_robustness", f'{opt.run_name}_{opt.task}',
+                   f'{opt.task}_{opt.train_noise_type}_{str(opt.train_noise_level)}_{str(opt.attentiontype)}_{str(opt.dset_id)}')
     elif opt.ssl_samples is not None:
-        wandb.init(project="saint_v2_ssl", group=f'{opt.run_name}_{opt.task}',
-                   name=f'{opt.task}_{str(opt.ssl_samples)}_{str(opt.attentiontype)}_{str(opt.dset_id)}')
+        logger_conf.logger.info("saint_v2_ssl", f'{opt.run_name}_{opt.task}',
+                   f'{opt.task}_{str(opt.ssl_samples)}_{str(opt.attentiontype)}_{str(opt.dset_id)}')
     else:
         raise Exception('wrong config.check the file you are running')
-    wandb.config.update(opt)
 
-print('Downloading and processing the dataset, it might take some time.')
-cat_dims, cat_idxs, con_idxs, X_train, y_train, X_valid, y_valid, X_test, y_test, train_mean, train_std = data_prep_openml(
-    opt.dset_id, opt.dset_seed, opt.task, datasplit=[.65, .15, .2])
-continuous_mean_std = np.array([train_mean, train_std]).astype(np.float32)
+cat_dims, cat_idxs, con_idxs, X_train, y_train, X_valid, y_valid, X_test, y_test, train_mean, train_std, \
+trading_date_idxs = data_prep_china_options(opt.dset_seed)
+# continuous_mean_std = np.array([train_mean, train_std]).astype(np.float32)
+continuous_mean_std = None
 
 ##### Setting some hyperparams based on inputs and dataset
 _, nfeat = X_train['data'].shape
 if nfeat > 100:
     opt.embedding_size = min(4, opt.embedding_size)
-    opt.batchsize = min(64, opt.batchsize)
+    # opt.batchsize = min(64, opt.batchsize)
 if opt.attentiontype != 'col':
     opt.transformer_depth = 1
     opt.attention_heads = 4
@@ -107,22 +118,18 @@ if opt.attentiontype != 'col':
     else:
         opt.ff_dropout = 0.8
 
-if opt.dset_id in [41540, 42729, 42728]:
-    opt.batchsize = 2048
-
-if opt.dset_id == 42734:
-    opt.batchsize = 255
 print(nfeat, opt.batchsize)
 print(opt)
 
-train_ds = DataSetCatCon(X_train, y_train, cat_idxs, opt.dtask, continuous_mean_std)
-trainloader = DataLoader(train_ds, batch_size=opt.batchsize, shuffle=True, num_workers=4)
+print(f'cpu_count() : {cpu_count()}')
+train_ds = DataSetCatCon(X_train, y_train, cat_idxs, con_idxs, opt.dtask, continuous_mean_std, trading_date_idxs)
+trainloader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=int(cpu_count() * 0.7))
 
-valid_ds = DataSetCatCon(X_valid, y_valid, cat_idxs, opt.dtask, continuous_mean_std)
-validloader = DataLoader(valid_ds, batch_size=opt.batchsize, shuffle=False, num_workers=4)
+valid_ds = DataSetCatCon(X_valid, y_valid, cat_idxs, con_idxs, opt.dtask, continuous_mean_std, trading_date_idxs)
+validloader = DataLoader(valid_ds, batch_size=1, shuffle=False, num_workers=4)
 
-test_ds = DataSetCatCon(X_test, y_test, cat_idxs, opt.dtask, continuous_mean_std)
-testloader = DataLoader(test_ds, batch_size=opt.batchsize, shuffle=False, num_workers=4)
+test_ds = DataSetCatCon(X_test, y_test, cat_idxs, con_idxs, opt.dtask, continuous_mean_std, trading_date_idxs)
+testloader = DataLoader(test_ds, batch_size=1, shuffle=False, num_workers=4)
 if opt.task == 'regression':
     y_dim = 1
 else:
@@ -166,7 +173,7 @@ model.to(device)
 if opt.pretrain:
     from pretraining import SAINT_pretrain
 
-    model = SAINT_pretrain(model, cat_idxs, X_train, y_train, continuous_mean_std, opt, device)
+    model = SAINT_pretrain(model, cat_idxs,con_idxs, X_train, y_train, continuous_mean_std, opt, device,trading_date_idxs)
 
 if opt.ssl_samples is not None and opt.ssl_samples > 0:
     print('We are in semi-supervised learning case')
@@ -177,7 +184,7 @@ if opt.ssl_samples is not None and opt.ssl_samples > 0:
     X_train['mask'] = X_train['mask'][train_pts_touse, :]
     train_bsize = min(opt.ssl_samples // 4, opt.batchsize)
 
-    train_ds = DataSetCatCon(X_train, y_train, cat_idxs, opt.dtask, continuous_mean_std)
+    train_ds = DataSetCatCon(X_train, y_train, cat_idxs, opt.dtask, continuous_mean_std,trading_date_idxs)
     trainloader = DataLoader(train_ds, batch_size=train_bsize, shuffle=True, num_workers=4)
 
 ## Choosing the optimizer
@@ -201,11 +208,16 @@ print('Training begins now.')
 for epoch in range(opt.epochs):
     model.train()
     running_loss = 0.0
-    for i, data in enumerate(trainloader, 0):
+    for i, data in tqdm(enumerate(trainloader, 0), total=len(trainloader)):
         optimizer.zero_grad()
         # x_categ is the the categorical data, with y appended as last feature. x_cont has continuous data. cat_mask is an array of ones same shape as x_categ except for last column(corresponding to y's) set to 0s. con_mask is an array of ones same shape as x_cont. 
-        x_categ, x_cont, y_gts, cat_mask, con_mask = data[0].to(device), data[1].to(device), data[2].to(device), data[
-            3].to(device), data[4].to(device)
+        x_categ, x_cont, y_gts, cat_mask, con_mask = data[0], data[1], data[2], data[3], data[4]
+        x_categ, x_cont, y_gts, cat_mask, con_mask = torch.squeeze(x_categ, 0).to(device), \
+                                                     torch.squeeze(x_cont, 0).to(device), \
+                                                     torch.squeeze(y_gts, 0).to(device), \
+                                                     torch.squeeze(cat_mask, 0).to(device), \
+                                                     torch.squeeze(con_mask, 0).to(device)
+
         if opt.train_noise_type is not None and opt.train_noise_level > 0:
             noise_dict = {
                 'noise_type': opt.train_noise_type,
@@ -233,49 +245,25 @@ for epoch in range(opt.epochs):
         running_loss += loss.item()
     # print(running_loss)
     if opt.active_log:
-        wandb.log({'epoch': epoch, 'train_epoch_loss': running_loss,
+        logger_conf.logger.info({'epoch': epoch, 'train_epoch_loss': running_loss,
                    'loss': loss.item()
                    })
-    if epoch % 5 == 0:
+    if epoch % 1 == 0:
         model.eval()
         with torch.no_grad():
-            if opt.task in ['binary', 'multiclass']:
-                accuracy, auroc = classification_scores(model, validloader, device, opt.task, vision_dset)
-                test_accuracy, test_auroc = classification_scores(model, testloader, device, opt.task, vision_dset)
 
-                print('[EPOCH %d] VALID ACCURACY: %.3f, VALID AUROC: %.3f' %
-                      (epoch + 1, accuracy, auroc))
-                print('[EPOCH %d] TEST ACCURACY: %.3f, TEST AUROC: %.3f' %
-                      (epoch + 1, test_accuracy, test_auroc))
-                if opt.active_log:
-                    wandb.log({'valid_accuracy': accuracy, 'valid_auroc': auroc})
-                    wandb.log({'test_accuracy': test_accuracy, 'test_auroc': test_auroc})
-                if opt.task == 'multiclass':
-                    if accuracy > best_valid_accuracy:
-                        best_valid_accuracy = accuracy
-                        best_test_auroc = test_auroc
-                        best_test_accuracy = test_accuracy
-                        torch.save(model.state_dict(), '%s/bestmodel.pth' % (modelsave_path))
-                else:
-                    if auroc > best_valid_auroc:
-                        best_valid_auroc = auroc
-                        best_test_auroc = test_auroc
-                        best_test_accuracy = test_accuracy
-                        torch.save(model.state_dict(), '%s/bestmodel.pth' % (modelsave_path))
-
-            else:
-                valid_rmse = mean_sq_error(model, validloader, device, vision_dset)
-                test_rmse = mean_sq_error(model, testloader, device, vision_dset)
-                print('[EPOCH %d] VALID RMSE: %.3f' %
-                      (epoch + 1, valid_rmse))
-                print('[EPOCH %d] TEST RMSE: %.3f' %
-                      (epoch + 1, test_rmse))
-                if opt.active_log:
-                    wandb.log({'valid_rmse': valid_rmse, 'test_rmse': test_rmse})
-                if valid_rmse < best_valid_rmse:
-                    best_valid_rmse = valid_rmse
-                    best_test_rmse = test_rmse
-                    torch.save(model.state_dict(), '%s/bestmodel.pth' % (modelsave_path))
+            valid_rmse = mean_sq_error(model, validloader, device, vision_dset)
+            test_rmse = mean_sq_error(model, testloader, device, vision_dset)
+            print('[EPOCH %d] VALID RMSE: %.3f' %
+                  (epoch + 1, valid_rmse))
+            print('[EPOCH %d] TEST RMSE: %.3f' %
+                  (epoch + 1, test_rmse))
+            if opt.active_log:
+                logger_conf.logger.info({'valid_rmse': valid_rmse, 'test_rmse': test_rmse})
+            if valid_rmse < best_valid_rmse:
+                best_valid_rmse = valid_rmse
+                best_test_rmse = test_rmse
+                torch.save(model.state_dict(), '%s/bestmodel.pth' % (modelsave_path))
         model.train()
 
 total_parameters = count_parameters(model)
@@ -289,8 +277,8 @@ else:
 
 if opt.active_log:
     if opt.task == 'regression':
-        wandb.log({'total_parameters': total_parameters, 'test_rmse_bestep': best_test_rmse,
+        logger_conf.logger.info({'total_parameters': total_parameters, 'test_rmse_bestep': best_test_rmse,
                    'cat_dims': len(cat_idxs), 'con_dims': len(con_idxs)})
     else:
-        wandb.log({'total_parameters': total_parameters, 'test_auroc_bestep': best_test_auroc,
+        logger_conf.logger.info({'total_parameters': total_parameters, 'test_auroc_bestep': best_test_auroc,
                    'test_accuracy_bestep': best_test_accuracy, 'cat_dims': len(cat_idxs), 'con_dims': len(con_idxs)})
