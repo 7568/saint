@@ -66,7 +66,7 @@ parser.add_argument('--final_mlp_style', default='sep', type=str, choices=['comm
 
 opt = parser.parse_args()
 if opt.log_to_file:
-    logger_conf.init_log('train_robust_v2')
+    logger_conf.init_log('train_v2')
 
 modelsave_path = os.path.join(os.getcwd(), opt.savemodelroot, opt.task, opt.run_name)
 if opt.task == 'regression':
@@ -147,11 +147,6 @@ else:
     raise Exception('case not written yet')
 
 model.to(device)
-
-if opt.pretrain:
-    from pretraining import SAINT_pretrain
-
-    model = SAINT_pretrain(model, cat_idxs, X_train, y_train, continuous_mean_std, opt, device)
 
 ## Choosing the optimizer
 
