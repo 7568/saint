@@ -123,8 +123,8 @@ def data_prep_china_options(seed):
     X_train, y_train, X_valid, y_valid, X_test, y_test = {}, {}, {}, {}, {}, {}
     # X_train['data'] = training_df.iloc[:500, :-1].to_numpy()
     training_df = training_df.astype({j: int for j in cat_features})
-    validation_df = training_df.astype({j: int for j in cat_features})
-    testing_df = training_df.astype({j: int for j in cat_features})
+    validation_df = validation_df.astype({j: int for j in cat_features})
+    testing_df = testing_df.astype({j: int for j in cat_features})
 
     X_train['data'] = training_df.iloc[:, :-3].to_numpy()
     X_train['mask'] = np.ones(X_train['data'].shape)
