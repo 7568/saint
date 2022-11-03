@@ -158,7 +158,7 @@ class NewModel(nn.Module):
         self.axial_attention = nn.ModuleList([TransformerModel(50, nhead, nhid, nlayers, dropout=dropout),
                                               TransformerModel(160+hidden_size, nhead * 2, nhid*2 * expand_size, nlayers,
                                                                dropout=dropout)] * atten_block_n)
-        self.simple_MLP = simple_MLP([160+hidden_size, 1024, 1])
+        self.simple_MLP = simple_MLP([160+hidden_size, 1024, 2])
 
     def forward(self, x, x_flatten):
         # print(x.device)
@@ -184,7 +184,9 @@ class NewModel(nn.Module):
                 x = rearrange(x, '1 n b -> 1 b n')
                 x = attention(x)
                 x = rearrange(x, '1 b n -> 1 n b')
-        x = rearrange(x, '1 n b -> 1 b n')
+        x = rearrange(x, '1 n b -> b n')
         # print(x.shape)
+        # print(x.shape)
+        # print(self.simple_MLP)
         out = self.simple_MLP(x)
         return x, out

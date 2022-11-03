@@ -1,5 +1,7 @@
+from typing import Tuple
+
 import torch
-from sklearn.metrics import roc_auc_score, mean_squared_error
+from sklearn.metrics import roc_auc_score, mean_squared_error, accuracy_score, confusion_matrix
 import numpy as np
 from tqdm import tqdm
 
@@ -80,36 +82,62 @@ def get_scheduler(args, optimizer):
 #     return acc, 0
 
 
-# def classification_scores(model, dloader, device, task, vision_dset):
-#     model.eval()
-#     m = nn.Softmax(dim=1)
-#     y_test = torch.empty(0).to(device)
-#     y_pred = torch.empty(0).to(device)
-#     prob = torch.empty(0).to(device)
-#     with torch.no_grad():
-#         for i, data in enumerate(dloader, 0):
-#             x_categ, x_cont, y_gts, cat_mask, con_mask = data[0], data[1], data[2], data[3], data[4]
-#             x_categ, x_cont, y_gts, cat_mask, con_mask = torch.squeeze(x_categ, 0).to(device), \
-#                                                          torch.squeeze(x_cont, 0).to(device), \
-#                                                          torch.squeeze(y_gts, 0).to(device), \
-#                                                          torch.squeeze(cat_mask, 0).to(device), \
-#                                                          torch.squeeze(con_mask, 0).to(device)
-#             _, x_categ_enc, x_cont_enc = embed_data_mask(x_categ, x_cont, cat_mask, con_mask, model, vision_dset)
-#             reps = model.transformer(x_categ_enc, x_cont_enc)
-#             y_reps = reps[:, 0, :]
-#             y_outs = model.mlpfory(y_reps)
-#             # import ipdb; ipdb.set_trace()
-#             y_test = torch.cat([y_test, y_gts.squeeze().float()], dim=0)
-#             y_pred = torch.cat([y_pred, torch.argmax(y_outs, dim=1).float()], dim=0)
-#             if task == 'binary':
-#                 prob = torch.cat([prob, m(y_outs)[:, -1].float()], dim=0)
-#
-#     correct_results_sum = (y_pred == y_test).sum().float()
-#     acc = correct_results_sum / y_test.shape[0] * 100
-#     auc = 0
-#     if task == 'binary':
-#         auc = roc_auc_score(y_score=prob.cpu(), y_true=y_test.cpu())
-#     return acc.cpu().numpy(), auc
+def classification_scores(model, dloader, device):
+    model.eval()
+    m = nn.Softmax(dim=1)
+    y = []
+    y_hat = torch.empty(0).to(device)
+    y_prob_hat = torch.empty(0).to(device)
+    with torch.no_grad():
+        for i, data in tqdm(enumerate(dloader, 0), total=len(dloader)):
+            x, x_1, x_2, _y = data[0], data[1], data[2], data[3]
+            x, x_1, x_2, _y = torch.squeeze(x, 0).to(device), torch.squeeze(x_1, 0).to(device), torch.squeeze(x_2,
+                                                                                                              0).to(
+                device), torch.squeeze(_y, 0).to(device)
+            y = np.append(y, _y.cpu().numpy())
+            feature_out_0, predict_out = model(x, x_2)
+            y_hat = torch.cat([y_hat, torch.argmax(predict_out, dim=1).float()], dim=0)
+            y_prob_hat = torch.cat([y_prob_hat, m(predict_out)[:, -1].float()], dim=0)
+    auc = roc_auc_score(y_true=y, y_score=y_prob_hat.cpu())
+    accu = accuracy_score(y_true=y, y_pred=y_hat.cpu())
+    return auc, accu
+
+
+def classification_scores_2(model, dloader, device) -> Tuple[float, float, float, float]:
+    model.eval()
+    m = nn.Softmax(dim=1)
+    y = []
+    y_hat = torch.empty(0).to(device)
+    y_prob_hat = torch.empty(0).to(device)
+    with torch.no_grad():
+        for i, data in tqdm(enumerate(dloader, 0), total=len(dloader)):
+            x, _y = data[0].to(device), data[1].to(device)
+
+            y = np.append(y, _y.cpu().numpy())
+            predict_out = model(x)
+            y_hat = torch.cat([y_hat, torch.argmax(predict_out, dim=1).float()], dim=0)
+            y_prob_hat = torch.cat([y_prob_hat, m(predict_out)[:, -1].float()], dim=0)
+    auc = roc_auc_score(y_true=y, y_score=y_prob_hat.cpu())
+    accu = accuracy_score(y_true=y, y_pred=y_hat.cpu())
+    y_true = y
+    y_test_hat = y_hat.cpu()
+    tn, fp, fn, tp = confusion_matrix(y_true, y_test_hat).ravel()
+    print('0：不涨 ， 1：涨')
+    print('tn, fp, fn, tp', tn, fp, fn, tp)
+
+    print(f'test中为1的比例 : {y_true.sum() / len(y_true)}')
+    print(f'test中为0的比例 : {(1 - y_true).sum() / len(y_true)}')
+
+    # error_in_test = mean_squared_error(y_test_hat, np.array(testing_df[target_fea]).reshape(-1, 1))
+    accu_1 = tp / (tp + fp)
+    accu_2 = tp / (tp + fn)
+    print(f'查准率 - 预测为1 且实际为1 ，看涨的准确率: {accu_1}')
+    print(f'查全率 - 实际为1，预测为1 : {accu_2}')
+    print(f'F1 = {(2 * tp) / (len(y_true) + tp - tn)}')
+
+    # print(f'AUC：{auc(y_true,y_test_hat)}')
+    print(f'总体准确率：{accuracy_score(y_true, y_test_hat)}')
+    return auc, accu, accu_1, accu_2
 
 
 def mean_sq_error(model, dloader, device):
@@ -119,7 +147,8 @@ def mean_sq_error(model, dloader, device):
         y_hat = []
         for i, data in tqdm(enumerate(dloader, 0), total=len(dloader)):
             x, x_1, x_2, _y = data[0], data[1], data[2], data[3]
-            x, x_1, x_2, _y = torch.squeeze(x, 0).to(device), torch.squeeze(x_1, 0).to(device), torch.squeeze(x_2, 0).to(
+            x, x_1, x_2, _y = torch.squeeze(x, 0).to(device), torch.squeeze(x_1, 0).to(device), torch.squeeze(x_2,
+                                                                                                              0).to(
                 device), torch.squeeze(_y, 0).to(device)
             y = np.append(y, _y.cpu().numpy())
             feature_out_0, predict_out = model(x, x_2)

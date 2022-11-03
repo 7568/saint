@@ -2,11 +2,13 @@ import argparse
 import os
 import sys
 from multiprocessing import cpu_count
+
 sys.path.append(os.path.dirname("../../*"))
 sys.path.append(os.path.dirname("../*"))
 import numpy as np
 import torch
 from torch import nn
+from torch.nn.functional import one_hot
 from new_encoder.new_model import NewModel
 
 from new_encoder.data_openml import data_prep_china_options, DataSetCatCon
@@ -88,7 +90,7 @@ device = torch.device(f"cuda:{opt.gpu_index}")
 print(f"Device is {device}.")
 
 torch.manual_seed(opt.set_seed)
-model = NewModel(28,opt.expand_size).to(device)
+model = NewModel(28, opt.expand_size).to(device)
 criterion = nn.CrossEntropyLoss().to(device)
 
 os.makedirs(modelsave_path, exist_ok=True)
@@ -168,7 +170,7 @@ best_valid_accuracy = 0
 best_test_auroc = 0
 best_test_accuracy = 0
 best_valid_rmse = 100000
-delta=0.5
+delta = 0.5
 print('Training begins now.')
 for epoch in range(opt.epochs):
     model.train()
@@ -177,20 +179,14 @@ for epoch in range(opt.epochs):
         optimizer.zero_grad()
         x, x_1, x_2, y = data[0], data[1], data[2], data[3]
         x, x_1, x_2, y = torch.squeeze(x, 0).to(device), torch.squeeze(x_1, 0).to(device), torch.squeeze(x_2, 0).to(
-            device), torch.squeeze(y, 0).to(device)
+            device), torch.squeeze(y, 0).long().to(device)
         # print(x.shape)
-        feature_out_0, predict_out_0 = model(x, x_1)
-        optimizer.zero_grad()
-        model.eval()
-        model.train()
+
         feature_out, predict_out = model(x, x_2)
-        # print(feature_out_0.shape)
-        # print(feature_out.shape)
-        # print(torch.squeeze(predict_out,0).shape)
-        # print(y.shape)shape
-        loss_0 = criterion(feature_out_0, feature_out)
-        loss_1 = criterion(torch.squeeze(predict_out,0), y)
-        loss = loss_1 + delta * loss_0
+        # print(predict_out)
+        # print(y.squeeze())
+
+        loss = criterion(predict_out, y.squeeze())
         loss.backward()
         optimizer.step()
         if opt.optimizer == 'SGD':
@@ -205,28 +201,24 @@ for epoch in range(opt.epochs):
         model.eval()
         with torch.no_grad():
 
-            valid_auc = classification_scores(model, validloader, device)
-            test_auc = classification_scores(model, testloader, device)
-            print('[EPOCH %d] VALID RMSE: %.3f' %
-                  (epoch + 1, valid_auc))
-            print('[EPOCH %d] TEST RMSE: %.3f' %
-                  (epoch + 1, test_auc))
-            if opt.active_log:
-                logger_conf.logger.info({'valid_rmse': valid_auc, 'test_rmse': test_auc})
-            if valid_auc < best_valid_rmse:
-                best_valid_rmse = valid_auc
-                best_test_rmse = test_auc
+            valid_acc,valid_auc = classification_scores(model, validloader, device)
+            test_acc,test_auc = classification_scores(model, testloader, device)
+            print('[EPOCH %d] VALID ACCURACY: %.3f, VALID AUROC: %.3f' %
+                  (epoch + 1, valid_acc, valid_auc))
+            print('[EPOCH %d] TEST ACCURACY: %.3f, TEST AUROC: %.3f' %
+                  (epoch + 1, test_acc, test_auc))
+            if valid_acc > best_valid_accuracy:
+                best_valid_accuracy = valid_acc
+                # if auroc > best_valid_auroc:
+                #     best_valid_auroc = auroc
+                best_test_auroc = test_auc
+                best_test_accuracy = test_acc
                 torch.save(model.state_dict(), '%s/bestmodel.pth' % (modelsave_path))
         model.train()
 
 total_parameters = count_parameters(model)
 print('TOTAL NUMBER OF PARAMS: %d' % (total_parameters))
-if opt.task == 'binary':
-    print('AUROC on best model:  %.3f' % (best_test_auroc))
-elif opt.task == 'multiclass':
-    print('Accuracy on best model:  %.3f' % (best_test_accuracy))
-else:
-    print('RMSE on best model:  %.3f' % (best_test_rmse))
-
+print('AUROC on best model:  %.3f' % (best_test_auroc))
 if opt.active_log:
-    logger_conf.logger.info({'total_parameters': total_parameters, 'test_rmse_bestep': best_test_rmse})
+    logger_conf.logger.info({'total_parameters': total_parameters, 'test_auroc_bestep':best_test_auroc ,
+        'test_accuracy_bestep':best_test_accuracy })

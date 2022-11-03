@@ -12,14 +12,14 @@ from tqdm import tqdm
 from augmentations import embed_data_mask
 from data_openml import data_prep_china_options, DataSetCatCon
 from models import SAINT
-from utils import count_parameters, mean_sq_error
+from utils import count_parameters, mean_sq_error, classification_scores
 import logger_conf
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--gpu_index', default=3, type=int)
+parser.add_argument('--gpu_index', default=6, type=int)
 parser.add_argument('--vision_dset', action='store_true')
-parser.add_argument('--task', default='regression', type=str, choices=['binary', 'multiclass', 'regression'])
+parser.add_argument('--task', default='binary', type=str, choices=['binary', 'multiclass', 'regression'])
 parser.add_argument('--cont_embeddings', default='MLP', type=str, choices=['MLP', 'Noemb', 'pos_singleMLP'])
 parser.add_argument('--embedding_size', default=32, type=int)
 parser.add_argument('--transformer_depth', default=6, type=int)
@@ -201,16 +201,28 @@ for epoch in range(opt.epochs):
     if epoch % 1 == 0:
         model.eval()
         with torch.no_grad():
-            valid_rmse = mean_sq_error(model, validloader, device, vision_dset)
-            test_rmse = mean_sq_error(model, testloader, device, vision_dset)
-            print('[EPOCH %d] VALID RMSE: %.3f' %
-                  (epoch + 1, valid_rmse))
-            print('[EPOCH %d] TEST RMSE: %.3f' %
-                  (epoch + 1, test_rmse))
-            if valid_rmse < best_valid_rmse:
-                best_valid_rmse = valid_rmse
-                best_test_rmse = test_rmse
-                torch.save(model.state_dict(), '%s/bestmodel.pth' % (modelsave_path))
+            accuracy, auroc = classification_scores(model, validloader, device, opt.task, vision_dset)
+            test_accuracy, test_auroc = classification_scores(model, testloader, device, opt.task, vision_dset)
+
+            print('[EPOCH %d] VALID ACCURACY: %.3f, VALID AUROC: %.3f' %
+                  (epoch + 1, accuracy, auroc))
+            print('[EPOCH %d] TEST ACCURACY: %.3f, TEST AUROC: %.3f' %
+                  (epoch + 1, test_accuracy, test_auroc))
+
+            if opt.task == 'multiclass':
+                if accuracy > best_valid_accuracy:
+                    best_valid_accuracy = accuracy
+                    best_test_auroc = test_auroc
+                    best_test_accuracy = test_accuracy
+                    torch.save(model.state_dict(), '%s/bestmodel.pth' % (modelsave_path))
+            else:
+                if accuracy > best_valid_accuracy:
+                    best_valid_accuracy = accuracy
+                    # if auroc > best_valid_auroc:
+                    #     best_valid_auroc = auroc
+                    best_test_auroc = test_auroc
+                    best_test_accuracy = test_accuracy
+                    torch.save(model.state_dict(), '%s/bestmodel.pth' % (modelsave_path))
         model.train()
 
 total_parameters = count_parameters(model)

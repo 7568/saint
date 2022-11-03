@@ -111,7 +111,7 @@ def data_prep_china_options(seed):
     training_df = pd.read_csv(f'{PREPARE_HOME_PATH}/{NORMAL_TYPE}/training.csv', parse_dates=['TradingDate'])
     validation_df = pd.read_csv(f'{PREPARE_HOME_PATH}/{NORMAL_TYPE}/validation.csv', parse_dates=['TradingDate'])
     testing_df = pd.read_csv(f'{PREPARE_HOME_PATH}/{NORMAL_TYPE}/testing.csv', parse_dates=['TradingDate'])
-
+    last_x_index = -6
     cat_features = ['CallOrPut', 'MainSign']
     for i in range(1, 5):
         cat_features.append(f'MainSign_{i}')
@@ -119,22 +119,23 @@ def data_prep_china_options(seed):
     cat_idxs = [training_df.columns.get_loc(i) for i in cat_features]
     trading_date_idxs = training_df.columns.get_loc('TradingDate')
     con_idxs = np.delete(np.arange(training_df.columns.size - 1),
-                         np.concatenate((cat_idxs, [trading_date_idxs, -1, -2, -3])))
+                         np.concatenate((cat_idxs, [trading_date_idxs], np.arange(last_x_index, 0, 1))))
     X_train, y_train, X_valid, y_valid, X_test, y_test = {}, {}, {}, {}, {}, {}
     # X_train['data'] = training_df.iloc[:500, :-1].to_numpy()
     training_df = training_df.astype({j: int for j in cat_features})
     validation_df = validation_df.astype({j: int for j in cat_features})
     testing_df = testing_df.astype({j: int for j in cat_features})
 
-    X_train['data'] = training_df.iloc[:, :-3].to_numpy()
+    target_fea = 'up_and_down'
+    X_train['data'] = training_df.iloc[:, :last_x_index].to_numpy()
     X_train['mask'] = np.ones(X_train['data'].shape)
-    y_train['data'] = np.array(training_df['C_1']).reshape(-1, 1)
-    X_valid['data'] = validation_df.iloc[:, :-3].to_numpy()
+    y_train['data'] = np.array(training_df[target_fea]).reshape(-1, 1)
+    X_valid['data'] = validation_df.iloc[:, :last_x_index].to_numpy()
     X_valid['mask'] = np.ones(X_valid['data'].shape)
-    y_valid['data'] = np.array(validation_df['C_1']).reshape(-1, 1)
-    X_test['data'] = testing_df.iloc[:, :-3].to_numpy()
+    y_valid['data'] = np.array(validation_df[target_fea]).reshape(-1, 1)
+    X_test['data'] = testing_df.iloc[:, :last_x_index].to_numpy()
     X_test['mask'] = np.ones(X_test['data'].shape)
-    y_test['data'] = np.array(testing_df['C_1']).reshape(-1, 1)
+    y_test['data'] = np.array(testing_df[target_fea]).reshape(-1, 1)
 
     # X_train['data'] = training_df.iloc[:500, :-2].to_numpy()
     # X_train['mask'] = np.ones(X_train['data'].shape)

@@ -1,5 +1,7 @@
 import torch
 from torch import nn
+from tqdm import tqdm
+
 from models import SAINT, SAINT_vision
 
 from data import data_prep,DataSetCatCon
@@ -29,7 +31,7 @@ parser.add_argument('--batchsize', default=1024, type=int)
 parser.add_argument('--savemodelroot', default='./bestmodels', type=str)
 parser.add_argument('--run_name', default='testrun', type=str)
 parser.add_argument('--set_seed', default= 1 , type=int)
-parser.add_argument('--cuda_index', default= 0 , type=int)
+parser.add_argument('--cuda_index', default= 6 , type=int)
 parser.add_argument('--active_log',action = 'store_true')
 
 parser.add_argument('--pretrain', default=False,action = 'store_true')
@@ -314,7 +316,7 @@ print('Training begins now.')
 for epoch in range(opt.epochs):
     model.train()
     running_loss = 0.0
-    for i, data in enumerate(trainloader, 0):
+    for i, data in tqdm(enumerate(trainloader, 0),total=len(trainloader)):
         optimizer.zero_grad()
         # x_categ is the the categorical data, with y appended as last feature. x_cont has continuous data. cat_mask is an array of ones same shape as x_categ except for last column(corresponding to y's) set to 0s. con_mask is an array of ones same shape as x_cont. 
         x_categ, x_cont, cat_mask, con_mask = data[0].to(device), data[1].to(device),data[2].to(device),data[3].to(device)
@@ -325,7 +327,9 @@ for epoch in range(opt.epochs):
         # select only the representations corresponding to y and apply mlp on it in the next step to get the predictions.
         y_reps = reps[:,len(cat_dims)-1,:]
         y_outs = model.mlpfory(y_reps)
-        loss = criterion(y_outs,x_categ[:,len(cat_dims)-1]) 
+        print(y_outs)
+        print(x_categ[:,len(cat_dims)-1])
+        loss = criterion(y_outs,x_categ[:,len(cat_dims)-1])
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
