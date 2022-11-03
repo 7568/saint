@@ -143,28 +143,30 @@ class TransformerModel(nn.Module):
 
 
 class NewModel(nn.Module):
-    def __init__(self, input_feature_size,expand_size=1):
+    def __init__(self, input_feature_size, expand_size=1):
         super(NewModel, self).__init__()
 
-
-        hidden_size = input_feature_size * 2*expand_size  # 在hidden中的feature大小
+        hidden_size = input_feature_size * 2 * expand_size  # 在hidden中的feature大小
         num_layers = 6
         dropout = 0.1
-        self.lstm = LSTMModel(input_feature_size, hidden_size, num_layers*expand_size, dropout=dropout)
-        atten_block_n = 6*expand_size
+        self.lstm = LSTMModel(input_feature_size, hidden_size, num_layers * expand_size, dropout=dropout)
+        atten_block_n = 6 * expand_size
         nhead = 2
         nhid = 512
         nlayers = 1
         self.axial_attention = nn.ModuleList([TransformerModel(50, nhead, nhid, nlayers, dropout=dropout),
-                                              TransformerModel(160+hidden_size, nhead * 2, nhid*2 * expand_size, nlayers,
+                                              TransformerModel(160 + hidden_size, nhead * 2, nhid * 2 * expand_size,
+                                                               nlayers,
                                                                dropout=dropout)] * atten_block_n)
-        self.simple_MLP = simple_MLP([160+hidden_size, 1024, 2])
+        self.simple_MLP = simple_MLP([160 + hidden_size, 1024, 2])
 
     def forward(self, x, x_flatten):
         # print(x.device)
+        # print(x.shape)
+        x = rearrange(x, 'b s n -> s b n')
         x = self.lstm(x)
         # print(x.shape)
-        x = x[:, -1, :]
+        x = x[-1, :, :]
         # print(x.shape)
         # print(x_flatten.shape)
         x = torch.cat((x, x_flatten), 1)

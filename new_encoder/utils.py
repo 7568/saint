@@ -98,25 +98,9 @@ def classification_scores(model, dloader, device):
             feature_out_0, predict_out = model(x, x_2)
             y_hat = torch.cat([y_hat, torch.argmax(predict_out, dim=1).float()], dim=0)
             y_prob_hat = torch.cat([y_prob_hat, m(predict_out)[:, -1].float()], dim=0)
-    auc = roc_auc_score(y_true=y, y_score=y_prob_hat.cpu())
-    accu = accuracy_score(y_true=y, y_pred=y_hat.cpu())
-    return auc, accu
+    return eval_result(y_prob_hat,y_hat,y)
 
-
-def classification_scores_2(model, dloader, device) -> Tuple[float, float, float, float]:
-    model.eval()
-    m = nn.Softmax(dim=1)
-    y = []
-    y_hat = torch.empty(0).to(device)
-    y_prob_hat = torch.empty(0).to(device)
-    with torch.no_grad():
-        for i, data in tqdm(enumerate(dloader, 0), total=len(dloader)):
-            x, _y = data[0].to(device), data[1].to(device)
-
-            y = np.append(y, _y.cpu().numpy())
-            predict_out = model(x)
-            y_hat = torch.cat([y_hat, torch.argmax(predict_out, dim=1).float()], dim=0)
-            y_prob_hat = torch.cat([y_prob_hat, m(predict_out)[:, -1].float()], dim=0)
+def eval_result(y_prob_hat,y_hat,y):
     auc = roc_auc_score(y_true=y, y_score=y_prob_hat.cpu())
     accu = accuracy_score(y_true=y, y_pred=y_hat.cpu())
     y_true = y
@@ -138,6 +122,22 @@ def classification_scores_2(model, dloader, device) -> Tuple[float, float, float
     # print(f'AUC：{auc(y_true,y_test_hat)}')
     print(f'总体准确率：{accuracy_score(y_true, y_test_hat)}')
     return auc, accu, accu_1, accu_2
+
+def classification_scores_2(model, dloader, device) -> Tuple[float, float, float, float]:
+    model.eval()
+    m = nn.Softmax(dim=1)
+    y = []
+    y_hat = torch.empty(0).to(device)
+    y_prob_hat = torch.empty(0).to(device)
+    with torch.no_grad():
+        for i, data in tqdm(enumerate(dloader, 0), total=len(dloader)):
+            x, _y = data[0].to(device), data[1].to(device)
+
+            y = np.append(y, _y.cpu().numpy())
+            predict_out = model(x)
+            y_hat = torch.cat([y_hat, torch.argmax(predict_out, dim=1).float()], dim=0)
+            y_prob_hat = torch.cat([y_prob_hat, m(predict_out)[:, -1].float()], dim=0)
+    return eval_result(y_prob_hat,y_hat,y)
 
 
 def mean_sq_error(model, dloader, device):

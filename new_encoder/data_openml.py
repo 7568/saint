@@ -45,8 +45,8 @@ def reformat_data(df):
     day_2_data.loc[:, 'CallOrPut'] = call_or_put
     day_3_data.loc[:, 'CallOrPut'] = call_or_put
     day_4_data.loc[:, 'CallOrPut'] = call_or_put
-    x = np.array([day_0_data.to_numpy(), day_1_data.to_numpy(), day_2_data.to_numpy(), day_3_data.to_numpy(),
-                  day_4_data.to_numpy()])
+    x = np.array([day_4_data.to_numpy(), day_3_data.to_numpy(), day_2_data.to_numpy(), day_1_data.to_numpy(),
+                  day_0_data.to_numpy()])
 
     # x_0 = np.transpose(x_0, (1, 0, 2))
 

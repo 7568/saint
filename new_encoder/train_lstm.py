@@ -3,6 +3,11 @@
 Created by louis at 2022/11/3
 Description:
 """
+# -*- coding: UTF-8 -*-
+"""
+Created by louis at 2022/11/3
+Description:
+"""
 import argparse
 import os
 import sys
@@ -19,18 +24,16 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import logger_conf
-from conv_model import ResNet, BasicBlock
+from lstm_model import LSTM
 from new_encoder.data_openml import data_prep_china_options, DataSetCatCon_2
 from new_encoder.utils import classification_scores_2
 from utils import get_scheduler
 
 
-
-
 def init_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--log_to_file', action='store_true')
-    parser.add_argument('--gpu_index', default=6, type=int)
+    parser.add_argument('--gpu_index', default=7, type=int)
     parser.add_argument('--task', default='binary', type=str, choices=['binary', 'multiclass', 'regression'])
     parser.add_argument('--run_name', default='testrun', type=str)
     parser.add_argument('--set_seed', default=1, type=int)
@@ -44,8 +47,15 @@ def init_parser():
 
 
 def train(device):
-    layers = [2, 2, 2, 2]
-    model = ResNet(BasicBlock, layers, num_classes=2).to(device)
+    input_feature_size = 28
+    hidden_size = 512
+    num_layers = 10
+    dropout = 0.
+    num_classes = 2
+    model = LSTM(input_feature_size,
+                 hidden_size,
+                 num_layers,
+                 dropout, num_classes).to(device)
     # print(model)
     training_df, validation_df, testing_df, latest_df = data_prep_china_options(opt.dset_seed)
     train_ds = DataSetCatCon_2(training_df)
@@ -78,11 +88,7 @@ def train(device):
         for i, data in tqdm(enumerate(trainloader, 0), total=len(trainloader)):
             optimizer.zero_grad()
             x, y = data[0].to(device), data[1].long().to(device)
-            # print(x.shape)
-
             predict_out = model(x)
-            # print(predict_out)
-            # print(y.squeeze())
 
             loss = criterion(predict_out, y.squeeze())
             loss.backward()

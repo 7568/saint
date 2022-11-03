@@ -1,14 +1,11 @@
-import argparse
 import os
 import sys
 from multiprocessing import cpu_count
 
 sys.path.append(os.path.dirname("../../*"))
 sys.path.append(os.path.dirname("../*"))
-import numpy as np
 import torch
 from torch import nn
-from torch.nn.functional import one_hot
 from new_encoder.new_model import NewModel
 
 from new_encoder.data_openml import data_prep_china_options, DataSetCatCon
@@ -17,15 +14,13 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 import torch.optim as optim
 from new_encoder.utils import count_parameters, classification_scores
-from augmentations import embed_data_mask
-from augmentations import add_noise
 import os
 import numpy as np
 import logger_conf
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--gpu_index', default=6, type=int)
+parser.add_argument('--gpu_index', default=5, type=int)
 parser.add_argument('--expand_size', default=1, type=int)
 parser.add_argument('--vision_dset', action='store_true')
 parser.add_argument('--task', default='binary', type=str, choices=['binary', 'multiclass', 'regression'])
@@ -75,7 +70,7 @@ parser.add_argument('--final_mlp_style', default='sep', type=str, choices=['comm
 
 opt = parser.parse_args()
 if opt.log_to_file:
-    logger_conf.init_log('train_robust_v2')
+    logger_conf.init_log('train_v2')
 opt.pretrain = True
 modelsave_path = os.path.join(os.getcwd(), opt.savemodelroot, opt.task, opt.run_name)
 if opt.task == 'regression':
@@ -106,7 +101,7 @@ if opt.active_log:
     else:
         raise Exception('wrong config.check the file you are running')
 
-training_df, validation_df, testing_df = data_prep_china_options(opt.dset_seed)
+training_df, validation_df, testing_df, latest_df = data_prep_china_options(opt.dset_seed)
 
 if opt.attentiontype != 'col':
     opt.transformer_depth = 1
@@ -124,13 +119,16 @@ print(opt)
 print(f'cpu_count() : {cpu_count()}')
 train_ds = DataSetCatCon(training_df)
 # trainloader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=int(cpu_count() * 0.7))
-trainloader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=4)
+trainloader = DataLoader(train_ds, batch_size=1, shuffle=True, num_workers=int(cpu_count()*0.5))
 
 valid_ds = DataSetCatCon(validation_df)
 validloader = DataLoader(valid_ds, batch_size=1, shuffle=False, num_workers=4)
 
 test_ds = DataSetCatCon(testing_df)
 testloader = DataLoader(test_ds, batch_size=1, shuffle=False, num_workers=4)
+
+latest_ds = DataSetCatCon(latest_df)
+latestloader = DataLoader(latest_ds, batch_size=1, shuffle=False, num_workers=4)
 
 # model = NewModel(
 #     categories=tuple(cat_dims),
@@ -172,6 +170,7 @@ best_test_accuracy = 0
 best_valid_rmse = 100000
 delta = 0.5
 print('Training begins now.')
+running_losss = []
 for epoch in range(opt.epochs):
     model.train()
     running_loss = 0.0
@@ -194,31 +193,52 @@ for epoch in range(opt.epochs):
         running_loss += loss.item()
         # print(delta*loss_0.item())
         # print(loss_1.item())
-    # print(running_loss)
+    running_losss.append(np.array(running_loss).mean())
     if opt.active_log:
         logger_conf.logger.info({'epoch': epoch, 'train_epoch_loss': running_loss, 'loss': loss.item()})
-    if epoch % 1 == 0:
-        model.eval()
-        with torch.no_grad():
+        if epoch % 1 == 0:
+            model.eval()
+            with torch.no_grad():
 
-            valid_acc,valid_auc = classification_scores(model, validloader, device)
-            test_acc,test_auc = classification_scores(model, testloader, device)
-            print('[EPOCH %d] VALID ACCURACY: %.3f, VALID AUROC: %.3f' %
-                  (epoch + 1, valid_acc, valid_auc))
-            print('[EPOCH %d] TEST ACCURACY: %.3f, TEST AUROC: %.3f' %
-                  (epoch + 1, test_acc, test_auc))
-            if valid_acc > best_valid_accuracy:
-                best_valid_accuracy = valid_acc
-                # if auroc > best_valid_auroc:
-                #     best_valid_auroc = auroc
-                best_test_auroc = test_auc
-                best_test_accuracy = test_acc
-                torch.save(model.state_dict(), '%s/bestmodel.pth' % (modelsave_path))
-        model.train()
+                valid_auc, valid_acc, v_acc_1, v_acc_2 = classification_scores(model, validloader, device)
+                test_auc, test_acc, t_acc_1, t_acc_2 = classification_scores(model, testloader, device)
+                print('[EPOCH %d] VALID ACCURACY: %.3f, VALID AUROC: %.3f' %
+                      (epoch + 1, valid_acc, valid_auc))
+                print('[EPOCH %d] TEST ACCURACY: %.3f, TEST AUROC: %.3f' %
+                      (epoch + 1, test_acc, test_auc))
+                if valid_acc > best_valid_accuracy:
+                    best_valid_accuracy = valid_acc
+                    best_valid_accuracy_1 = v_acc_1
+                    best_valid_accuracy_2 = v_acc_2
+                    best_test_accuracy_1 = t_acc_1
+                    best_test_accuracy_2 = t_acc_2
+                    best_test_accuracy = test_acc
+                    torch.save(model.state_dict(), '%s/bestmodel.pth' % (modelsave_path))
+                print('VALID BEST ACCURACY :%.3f AND TEST BEST ACCURACY: %.3f' %
+                      (best_valid_accuracy, best_test_accuracy))
+                print('验证集中最佳查准率 - 预测为1 且实际为1 ，看涨的准确率 :%.3f' %
+                      best_valid_accuracy_1)
+                print('验证集中最佳查全率 - 实际为1，预测为1 :%.3f' %
+                      best_valid_accuracy_2)
+                print('测试集中最佳查准率 - 预测为1 且实际为1 ，看涨的准确率 :%.3f' %
+                      best_test_accuracy_1)
+                print('测试集中最佳查全率 - 实际为1，预测为1 :%.3f' %
+                      best_test_accuracy_2)
+                print(f'loss:{running_losss}')
+            model.train()
+    model.eval()
+    with torch.no_grad():
+        latest_auc, latest_acc, l_acc_1, l_acc_2 = classification_scores(model, latestloader, device)
+        print('LATEST ACCURACY: %.3f, LATEST AUROC: %.3f' %
+              (latest_acc, latest_auc))
+        print('最佳查准率 - 预测为1 且实际为1 ，看涨的准确率 :%.3f' %
+              l_acc_1)
+        print('最佳查全率 - 实际为1，预测为1 :%.3f' %
+              l_acc_2)
 
 total_parameters = count_parameters(model)
 print('TOTAL NUMBER OF PARAMS: %d' % (total_parameters))
 print('AUROC on best model:  %.3f' % (best_test_auroc))
 if opt.active_log:
-    logger_conf.logger.info({'total_parameters': total_parameters, 'test_auroc_bestep':best_test_auroc ,
-        'test_accuracy_bestep':best_test_accuracy })
+    logger_conf.logger.info({'total_parameters': total_parameters, 'test_auroc_bestep': best_test_auroc,
+                             'test_accuracy_bestep': best_test_accuracy})
