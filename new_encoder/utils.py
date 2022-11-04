@@ -98,9 +98,10 @@ def classification_scores(model, dloader, device):
             feature_out_0, predict_out = model(x, x_2)
             y_hat = torch.cat([y_hat, torch.argmax(predict_out, dim=1).float()], dim=0)
             y_prob_hat = torch.cat([y_prob_hat, m(predict_out)[:, -1].float()], dim=0)
-    return eval_result(y_prob_hat,y_hat,y)
+    return eval_result(y_prob_hat, y_hat, y)
 
-def eval_result(y_prob_hat,y_hat,y):
+
+def eval_result(y_prob_hat, y_hat, y):
     auc = roc_auc_score(y_true=y, y_score=y_prob_hat.cpu())
     accu = accuracy_score(y_true=y, y_pred=y_hat.cpu())
     y_true = y
@@ -123,6 +124,7 @@ def eval_result(y_prob_hat,y_hat,y):
     print(f'总体准确率：{accuracy_score(y_true, y_test_hat)}')
     return auc, accu, accu_1, accu_2
 
+
 def classification_scores_2(model, dloader, device) -> Tuple[float, float, float, float]:
     model.eval()
     m = nn.Softmax(dim=1)
@@ -137,7 +139,26 @@ def classification_scores_2(model, dloader, device) -> Tuple[float, float, float
             predict_out = model(x)
             y_hat = torch.cat([y_hat, torch.argmax(predict_out, dim=1).float()], dim=0)
             y_prob_hat = torch.cat([y_prob_hat, m(predict_out)[:, -1].float()], dim=0)
-    return eval_result(y_prob_hat,y_hat,y)
+    return eval_result(y_prob_hat, y_hat, y)
+
+
+def classification_scores_3(model_1, model_2, dloader, device) -> Tuple[float, float, float, float]:
+    model_1.eval()
+    model_2.eval()
+    m = nn.Softmax(dim=1)
+    y = []
+    y_hat = torch.empty(0).to(device)
+    y_prob_hat = torch.empty(0).to(device)
+    with torch.no_grad():
+        for i, data in tqdm(enumerate(dloader, 0), total=len(dloader)):
+            x, true_x, _y = data[0].to(device), data[1].to(device), data[2].to(device)
+
+            y = np.append(y, _y.cpu().numpy())
+            fea_1, out_1 = model_1(x, True)
+            predict_out = model_2(fea_1, False, True)
+            y_hat = torch.cat([y_hat, torch.argmax(predict_out, dim=1).float()], dim=0)
+            y_prob_hat = torch.cat([y_prob_hat, m(predict_out)[:, -1].float()], dim=0)
+    return eval_result(y_prob_hat, y_hat, y)
 
 
 def mean_sq_error(model, dloader, device):

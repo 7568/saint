@@ -23,34 +23,36 @@ def data_split(X, y, nan_mask, indices):
     return x_d, y_d
 
 
-def reformat_data(df):
+def reformat_data(df, return_true_x=False):
     target_fea = 'up_and_down'
-    call_or_put = df.iloc[:, 0].to_numpy()
+    no_need_columns = ['C_1', 'TradingDate']
+    df.drop(columns=no_need_columns, axis=1, inplace=True)
     y = df[target_fea]
-    df = df.iloc[:, 1:-6]
     _, d = df.shape
-    day_0_data = df.iloc[:, :int(d / 5)]
+    day_0_data = df.iloc[:, :int((d - 5) / 5)]
     columns = day_0_data.columns
-    no_need = ['PreClosePrice', 'PrePosition', 'RemainingTerm', 'PreSettlePrice', 'CallOrPut']
-    for nn in no_need:
-        columns = np.delete(columns, np.where(columns == nn))
-    day_0_data = day_0_data[columns]
+    day_0_data = day_0_data[columns].copy()
     day_1_data = df[columns + '_1'].copy()
     day_2_data = df[columns + '_2'].copy()
     day_3_data = df[columns + '_3'].copy()
     day_4_data = df[columns + '_4'].copy()
-
-    day_0_data.loc[:, 'CallOrPut'] = call_or_put
-    day_1_data.loc[:, 'CallOrPut'] = call_or_put
-    day_2_data.loc[:, 'CallOrPut'] = call_or_put
-    day_3_data.loc[:, 'CallOrPut'] = call_or_put
-    day_4_data.loc[:, 'CallOrPut'] = call_or_put
+    day_1_data.loc[:, 'up_and_down_1'] = df['up_and_down_1'].copy()
+    day_2_data.loc[:, 'up_and_down_2'] = df['up_and_down_2'].copy()
+    day_3_data.loc[:, 'up_and_down_3'] = df['up_and_down_3'].copy()
+    day_4_data.loc[:, 'up_and_down_4'] = df['up_and_down_4'].copy()
+    if return_true_x:
+        day_0_data.loc[:, 'up_and_down'] = np.array(y)
+        true_x = np.array([day_4_data.to_numpy(), day_3_data.to_numpy(), day_2_data.to_numpy(), day_1_data.to_numpy(),
+                           day_0_data.to_numpy()])
+    day_0_data.loc[:, 'up_and_down'] = -1
     x = np.array([day_4_data.to_numpy(), day_3_data.to_numpy(), day_2_data.to_numpy(), day_1_data.to_numpy(),
                   day_0_data.to_numpy()])
 
-    # x_0 = np.transpose(x_0, (1, 0, 2))
+    if return_true_x:
+        return x.astype(np.float32), true_x.astype(np.float32), y.astype(np.int32)
+    else:
+        return x.astype(np.float32), y.astype(np.int32)
 
-    return x.astype(np.float32), y.astype(np.int32)
 
 def reformat_data_2(df):
     target_fea = 'up_and_down'
@@ -60,9 +62,9 @@ def reformat_data_2(df):
     _, d = df.shape
     day_0_data = df.iloc[:, :int(d / 5)]
     columns = day_0_data.columns
-    no_need = ['PreClosePrice', 'PrePosition', 'RemainingTerm', 'PreSettlePrice', 'CallOrPut']
-    for nn in no_need:
-        columns = np.delete(columns, np.where(columns == nn))
+    # no_need = ['PreClosePrice', 'PrePosition', 'RemainingTerm', 'PreSettlePrice', 'CallOrPut']
+    # for nn in no_need:
+    #     columns = np.delete(columns, np.where(columns == nn))
     day_0_data = day_0_data[columns]
     day_1_data = df[columns + '_1'].copy()
     day_2_data = df[columns + '_2'].copy()
@@ -83,6 +85,7 @@ def reformat_data_2(df):
     # x_0 = np.transpose(x_0, (1, 0, 2))
 
     return x.astype(np.float32), y.astype(np.int32)
+
 
 def data_prep_china_options(seed):
     """
@@ -109,7 +112,7 @@ def data_prep_china_options(seed):
     # X_train, y_train = reformat_data(training_df)
     # X_valid, y_valid = reformat_data(validation_df)
     # X_test, y_test = reformat_data(testing_df)
-    return training_df, validation_df, testing_df,latest_df
+    return training_df, validation_df, testing_df, latest_df
 
 
 class DataSetCatCon(Dataset):
@@ -146,18 +149,20 @@ class DataSetCatCon_2(Dataset):
     每次取出一行数据
     """
 
-    def __init__(self, data):
-        # 删除时间那一列，因为时间不参数训练
-        self.x,self.y = reformat_data(data.iloc[:, 1:])
-
+    def __init__(self, data, return_true_x=False):
+        self.return_true_x = return_true_x
+        if self.return_true_x:
+            self.x, self.true_x, self.y = reformat_data(data, return_true_x)
+        else:
+            self.x, self.y = reformat_data(data)
 
     def __len__(self):
         return len(self.y)
 
     def __getitem__(self, idx):
+        if self.return_true_x:
+            return self.x[:, [idx], :], self.true_x[:, [idx], :], self.y[idx]
+        else:
+            return self.x[:, [idx], :], self.y[idx]
 
-        return self.x[:,[idx],:], self.y[idx]
 
-
-if __name__ == '__main__':
-    pass

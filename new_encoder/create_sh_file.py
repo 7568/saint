@@ -40,7 +40,7 @@ def create_run_file(file_name):
 
 
 if __name__ == '__main__':
-    file_names = ['train_v2.py', 'train_lstm.py', 'train_conv.py']
+    file_names = ['train_v2.py', 'train_lstm.py', 'train_conv.py','train_transformer.py']
 
     start_all_str = f"#!/bin/bash\n"
     for name in file_names:

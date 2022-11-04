@@ -13,38 +13,54 @@ import sys
 
 sys.path.append(os.path.dirname("../../*"))
 sys.path.append(os.path.dirname("../*"))
-from einops import rearrange
 import torch.nn as nn
-from torch import Tensor
+import torch
+from einops import rearrange
 
 
 class LSTM(nn.Module):
-    def __init__(
-            self,
-            input_feature_size,
-            hidden_size,
-            num_layers,
-            dropout=0.,
-            num_classes=2
-    ) -> None:
+    """
+    input_size - will be 1 in this example since we have only 1 predictor (a sequence of previous values)
+    hidden_size - Can be chosen to dictate how much hidden "long term memory" the network will have
+    output_size - This will be equal to the prediciton_periods input to get_x_y_pairs
+    """
+
+    def __init__(self, input_size, hidden_size, num_layers,output_size, dropout,device):
         super(LSTM, self).__init__()
-        self.rnn = nn.LSTM(input_feature_size, hidden_size, num_layers, dropout=dropout)
+        self.hidden_size = hidden_size
 
-        self.fc = nn.Linear(512, num_classes)
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, dropout=dropout)
 
-    def _forward_impl(self, x: Tensor) -> Tensor:
-        # See note [TorchScript super()]
-        # print('_forward_impl',x.shape)
+        self.linear = nn.Linear(hidden_size, output_size)
+
+        self.num_layers = num_layers
+        self.output_size = output_size
+        self.device = device
+
+    def forward(self, x, hidden=None):
         x = rearrange(x, 'b s 1 n -> s b n')
-        x, (hn, cn)= self.rnn(x)
-        # print(x)
         # print(x.shape)
-        x = x[-1, :, :]
+        s, b, n = x.shape
+        if hidden == None:
+            self.hidden = (torch.zeros(self.num_layers, b, self.hidden_size).to(self.device),
+                           torch.zeros(self.num_layers, b, self.hidden_size).to(self.device))
+        else:
+            self.hidden = hidden
+
+        """
+        inputs need to be in the right shape as defined in documentation
+        - https://pytorch.org/docs/stable/generated/torch.nn.LSTM.html
+
+        lstm_out - will contain the hidden states from all times in the sequence
+        self.hidden - will contain the current hidden state and cell state
+        """
         # print(x.shape)
-        # x = rearrange(x, 'b n -> b 1 n')
-        x = self.fc(x)
+        # print(x.view(len(x), 1, -1).shape)
+        # lstm_out, self.hidden = self.lstm(x.view(len(x), 1, -1),
+        #                                   self.hidden)
+        lstm_out, self.hidden = self.lstm(x, self.hidden)
+        # print(lstm_out.shape)
 
-        return x
+        predictions = self.linear(lstm_out[-1])
 
-    def forward(self, x: Tensor) -> Tensor:
-        return self._forward_impl(x)
+        return predictions
